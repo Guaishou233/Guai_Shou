@@ -1,9 +1,9 @@
 <template>
     <div>
         <input type="file" @change="handleFileUpload" accept="image/*"/>
-        <button @click="recognizeText">识别文本</button>
+        <button @click="recognizeAllImages">识别文本</button>
+        <img v-for="url in splitImages" :src="url" :key="url" />
         <div>{{ recognizedText }}</div>
-        <canvas ref="myCanvas"></canvas>
     </div>
 </template>
 
@@ -16,7 +16,9 @@
             return {
                 worker: null,
                 recognizedText: '',
-                file: ''
+                file: '',
+                splitImages:[],
+                splitNum:[]
             };
         },
         //与处理图像，先分割图像为多个待识别小图片
@@ -32,24 +34,44 @@
                 this.file = event.target.files[0];
                 this.readingFile();
             },
-            recognizeText() {
-                // 将黑白图像转换为 Data URL
-                const blackAndWhiteDataURL = this.$refs.myCanvas.toDataURL('image/png');
-                (async () => {
-
+            async recognizeAllImages(){
+              const workers =[];
+              const promises =[];
+                for (let url of this.splitImages) {
                     const worker = await Tesseract.createWorker();
                     await worker.loadLanguage('eng');
                     await worker.initialize('eng');
-                    const {data: {text}} = await worker.recognize(blackAndWhiteDataURL);
-                    this.recognizedText = text
+
+                    promises.push(worker.recognize(url));
+                    workers.push(worker);
+                }
+
+                const results = await Promise.all(promises);
+                this.recognizedText = results.map(r => r.data.text).join(' ');
+                console.log(this.recognizedText)
+                for (let worker of workers) {
                     await worker.terminate();
-                    this.worker = null;
-                })();
+                }
             },
+            recognizeText() {
+                // 将黑白图像转换为 Data URL
+                // const blackAndWhiteDataURL = this.$refs.myCanvas.toDataURL('image/png');
+                // console.log(blackAndWhiteDataURL);
+                // (async () => {
+                //
+                //     const worker = await Tesseract.createWorker();
+                //     await worker.loadLanguage('eng');
+                //     await worker.initialize('eng');
+                //     const {data: {text}} = await worker.recognize(blackAndWhiteDataURL);
+                //     this.recognizedText = text
+                //     await worker.terminate();
+                //     this.worker = null;
+                // })();
+            },
+//图片预处理
             readingFile(){
                 // 创建 FileReader 来读取文件
                 const reader = new FileReader();
-                const canvas = this.$refs.myCanvas;
 
                 // 读取文件为 Data URL
                 reader.readAsDataURL(this.file);
@@ -58,17 +80,23 @@
                 reader.onload = (e) => {
                     const image = new Image();
                     image.src = e.target.result;
+
                     // 等待图片加载完成后，在 Canvas 上绘制图片
                     image.onload = () => {
+
+                        const canvas = document.createElement('canvas');
                         const context = canvas.getContext('2d');
+
                         // 将Canvas的宽度和高度设置为图像的宽度和高度
                         canvas.width = image.width;
                         canvas.height = image.height;
+
                         //修改灰度
-                        this.changeGray(context, canvas)
+                        //this.changeGray(context, canvas)
+                        //分割图片
                         this.spliteImg(context,canvas,image, [
-                            { x: 0, y: 0, width: 10, height: 10 }, // 第一个分割位置和大小
-                            { x: 50, y: 0, width: 10, height: 20 }, // 第二个分割位置和大小
+                            { x: 1430, y: 250, width: 75, height: 35 }, // 第一个分割位置和大小
+                            { x: 1550, y: 250, width: 75, height: 35 }, // 第二个分割位置和大小
                             // 在这里添加更多的分割位置和大小
                         ]);
                     };
@@ -76,7 +104,7 @@
             },
             //分割图片
             spliteImg(context,canvas,image,positions) {
-                positions.forEach(function (position) {
+                positions.forEach( (position) => {
                     // 清空Canvas
                     canvas.width = position.width;
                     canvas.height = position.height;
@@ -96,8 +124,10 @@
 
                     // 将分割后的图像保存为数据URL
                     var splitImageDataURL = canvas.toDataURL();
-                    console.log(splitImageDataURL); // 打印数据URL
+                    this.splitImages.push(splitImageDataURL);
                 });
+
+
             },
             //修改灰度
             changeGray(context, canvas) {
